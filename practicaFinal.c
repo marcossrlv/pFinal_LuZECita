@@ -304,7 +304,102 @@
     }
 
     void AccionesEncargado(){
-        
+
+        struct cliente* clienteElegido=NULL;
+
+        while(true){
+
+            pthread_mutex_lock(&colaClientes);
+
+            //1. se busca un cliente de tipo red sin atender por el que empezar a comparar
+            //   si existe, se elegirá al de mayor prioridad y si tienen la misma prioridad
+            //   al de mayor tiempo de espera...
+            for(int z= 0; z<20; z++){
+                //Si se encuentra a un cliente disponible...
+                if(clientes[z].tipo==1 && clientes[z].atendido==0){
+                    //Si ya se selecciono un cliente
+                    if(clienteElegido != NULL){
+                        //Si el nuevo cliente tiene mayor prioridad
+                        if(clienteElegido.prioridad < clientes[z].prioridad){
+                            clienteElegido= &clientes[z];   
+                        //Si el cliente a comprobar tiene la misma prioridad pero espera más, se selecciona:
+                        } else if(clienteElegido.prioridad == clientes[z].prioridad && clienteElegido.id > clientes[z].id){ 
+                            clienteElegido= &clientes[z];
+                        }
+                    //Si no se encontro un cliente aun
+                    } else { clienteElegido= &clientes[z]; }
+                }
+            }
+
+            // si no se encuentra, se busca de tipo app, se busca de tipo red...
+            if(clienteElegido == NULL){
+
+                 for(int z= 0; z<20; z++){
+                    if(clientes[z].tipo==0 && clientes[z].atendido==0){
+                        if(clienteElegido != NULL){
+                            if(clienteElegido.prioridad < clientes[z].prioridad){
+                                clienteElegido= &clientes[z]; 
+                            } else if(clienteElegido.prioridad == clientes[z].prioridad && clienteElegido.id > clientes[z].id){ 
+                                clienteElegido= &clientes[z];
+                            }
+                        } else { clienteElegido= &clientes[z]; }
+                    }
+                }
+            }
+
+            //a. si no se han encontrado, duermo 3 segundos y regreso a 1.
+            if(clienteElegido == NULL){ 
+                pthread_mutex_unlock(&colaClientes);
+                sleep(3);
+                
+            //2.  si lo he encontrado, cambiamos el flag de atendido
+            } else {
+                *clienteElegido->atendido= 1;
+                pthread_mutex_unlock(&colaClientes);
+
+                //3.  Calculamos el tipo de atención y en función de esto el tiempo de atención (el 80%, 10%, 10%).
+                int tiempoAtencion= 0;
+                char motivo[50];
+
+                switch(calculaAleatorios(1,10)){
+                    case 10:
+                    case 9:
+                    case 8:
+                    case 7:
+                    case 6:
+                    case 5:
+                    case 4:
+                    // 80% bien identificados
+                    case 3: tiempoAtencion= calculaAleatorios(1,4); strcat(motivo, "Bien identificado."); break;
+                    // 10% mal identificados
+                    case 2: tiempoAtencion= calculaAleatorios(2,6); strcat(motivo, "Mal identificado."); break;
+                        //10% confusion de compañia, abandonan sistema
+                    case 1; tiempoAtencion= calculaAleatorios(1,2); strcat(motivo, "Confusion de compañia. Abandona el sistema.");
+                }
+
+                //4.  Guardamos en el log que comienza la atención
+                pthread_mutex_lock(&fichero);
+                writeLogMessage("Comienza la atención:\n");
+                pthread_mutex_unlock(&fichero);
+
+                //5.  Dormimos el tiempo de atención.
+                sleep(tiempoAtencion);
+
+                //6.  Guardamos en el log que finaliza la atención
+                pthread_mutex_lock(&fichero);
+                writeLogMessage("Finaliza la atención:\n");
+
+                //7.  Guardamos en el log el motivo del fin de la atención.
+                writeLogMessage(motivo);
+                pthread_mutex_unlock(&fichero);
+
+                //8.  Cambiamos el flag de atendido
+                    pthread_mutex_lock(&colaClientes);
+                *clienteElegido->atendido
+                pthread_mutex_unlock(&colaClientes);
+                //9.  Volvemos al paso 1 y buscamos el siguiente.
+            }
+        }
     }
 
     void AccionesTecnicoDomiciliario(){
