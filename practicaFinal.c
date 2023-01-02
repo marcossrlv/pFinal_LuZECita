@@ -7,12 +7,14 @@
 
     pthread_mutex_t fichero, colaClientes, solicitudes;
     pthread_cond_t suficientesSolicitudesDomiciliarias;
-    int nClientesApp, nClientesRed,nSolsDomiciliarias;
+    int nClientesApp, nClientesRed,nSolsDomiciliarias, nClientesNoAtendidos;
     struct cliente {
         int id, atendido, tipo, prioridad, solicitud;
     } clientes[20];
     pthread_t tecnico_1, tecnico_2, resprep_1, resprep_2, encargado, atencionDomiciliaria;
     FILE * logFile;
+    struct sigaction clienteApp, clienteRed, terminar; //DECLARACIÓN GLOBAL???
+
 
     int calculaAleatorios(int min, int max);
     void writeLogMessage(char *id, char *msg);
@@ -25,7 +27,6 @@
     
 
     int main(int argc, char *argv[]){	
-        struct sigaction clienteApp, clienteRed, terminar;
 
     //1. signal o sigaction SIGUSR1, cliente app.
         clienteApp.sa_flags=0;
@@ -63,7 +64,7 @@
         if (pthread_cond_init(&suficientesSolicitudesDomiciliarias, NULL)!=0) exit(-1);
 
         //b.f. Contador de clientes de cada tipo y variables relativas a la solicitud de atención domiciliaria.
-        nClientesApp = 0, nClientesRed = 0, nSolsDomiciliarias = 0;
+        nClientesApp = 0, nClientesRed = 0, nSolsDomiciliarias = 0, nClientesNoAtendidos=0;
 
         //c. Lista de clientes id 0, Prioridad 0, atendido 0, solicitud 0.
         for(int i=0; i<20; i++){
@@ -96,6 +97,7 @@
         pthread_t nuevoCliente; 
         for(int i=0; i<20; i++){
             if(clientes[i].id==0){
+                nClientesNoAtendidos++;
                 char identificador[10];
                 char nIdentificador[3];
                 int posNuevoCliente=i;
@@ -128,8 +130,36 @@
         pthread_mutex_unlock(&colaClientes);
     }
 
-    void AccionesCliente(void *arg){
+    void terminarPrograma(int sig) {
+        clienteApp.sa_handler=SIG_IGN;
+        clienteRed.sa_handler=SIG_IGN;
+        //SOLUCION PROVISIONAL PARA QUE NO PUEDAN LLEGAR NUEVOS CLIENTES
+        if (sigaction(SIGUSR1, &clienteApp, NULL)==-1) {
+            perror("Llamada a sigaction cliente app terminar.");
+            exit(-1);
+        }
 
+        if (sigaction(SIGUSR2, &clienteRed, NULL)==-1) {
+            perror("Llamada a sigaction cliente red terminar.");
+            exit(-1);
+        }
+
+        pthread_mutex_lock(&colaClientes);
+        while(nClientesNoAtendidos!=0){ //Hasta que todos los clientes no esten atentidos(por máquina o por recepcionista)
+            pthread_mutex_unlock(&colaClientes);//el programa no se puede cerrar
+            sleep(3);
+        }
+        pthread_mutex_lock(&fichero);
+        writeLogMessage("ESTADO", "No quedan clientes por atender, se cierra el programa");
+        pthread_mutex_unlock(&fichero);
+        if(pthread_mutex_destroy(&fichero)!=0) exit(-1);
+        if(pthread_mutex_destroy(&colaClientes)!=0) exit(-1);
+        if(pthread_mutex_destroy(&solicitudes)!=0) exit(-1);
+        if(pthread_cond_destroy(&suficientesSolicitudesDomiciliarias)!=0) exit(-1);
+        exit(0);
+    }
+
+    void * accionesCliente(void *arg){
         //1.  Guardar en el log la hora de entrada.
         //2.  Guardar en el log el tipo de cliente.
         char[3] tipo;        
@@ -279,7 +309,7 @@
         }
     }
 
-    void AccionesTecnico(void* arg){
+    void * accionesTecnico(void* arg){
 
         char tipo[] = (char*) arg; //posible segmentation fault
         struct cliente* clienteElegido;
@@ -452,8 +482,8 @@
         }
     }
 
-    void AccionesEncargado(){
-
+    void * accionesEncargado(void * arg){
+        
         struct cliente* clienteElegido=NULL;
 
         while(true){
@@ -551,7 +581,63 @@
         }
     }
 
-    void AccionesTecnicoDomiciliario(){
+    void * accionesTecnicoDomiciliario(void* arg){
+        while(1){
+            pthread_mutex_lock(&solicitudes);
+            if(nSolsDomiciliarias<4) pthread_cond_wait(&suficientesSolicitudesDomiciliarias, &solicitudes);
+            
+            for(int i=0; i<4; i++){
+                struct cliente *clienteElegido;
+                int encontrado=0;
+                int n=0;
+                
+                pthread_mutex_lock(&colaClientes);
+                for(int i=0; i<20 && encontrado==0; i++){
+                    if(clientes[i].solicitud==1){
+                        clienteElegido = &clientes[i];
+                        encontrado = 1;
+                        n = i;
+                    }
+                }
+
+                for(int i=n+1; i<20; i++) {
+                    if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
+                        if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
+                            clienteElegido = &clientes[i];
+                        } 
+                    }
+                }
+                pthread_mutex_unlock(&colaClientes);
+
+                char identificador[10]="clired_";
+                char nIdentificador[3];
+                sprintf(nIdentificador,"%d",clienteElegido->id);
+                strcat(identificador, nIdentificador);
+                
+                pthread_mutex_lock(&fichero);
+                writeLogMessage(identificador, "Comienza la atención del técnico domiciliario");
+                pthread_mutex_unlock(&fichero);
+               
+                sleep(1);
+
+                pthread_mutex_lock(&fichero);
+                writeLogMessage(identificador, "Termina la atención del técnico domiciliario");
+                pthread_mutex_unlock(&fichero);
+
+                pthread_mutex_lock(&colaClientes);
+                clienteElegido->solicitud=0;
+                pthread_mutex_unlock(&colaClientes);
+            }
+
+            nSolsDomiciliarias=0;
+            pthread_mutex_lock(&fichero);
+            writeLogMessage("Tecnico domiciliario", "Termina de atender las 4 solicitudes");
+            pthread_mutex_unlock(&fichero);
+
+            pthread_cond_signal(&suficientesSolicitudesDomiciliarias);
+            pthread_mutex_unlock(&solicitudes);
+        }
+        
 
     }
 
