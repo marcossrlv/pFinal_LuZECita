@@ -134,7 +134,7 @@
 
     void AccionesTecnico(void* arg){
 
-        char tipo[] = *arg; //posible segmentation fault
+        char tipo[] = (char*) arg; //posible segmentation fault
         struct cliente* clienteElegido;
         int n;
         int encontrado;
@@ -142,7 +142,7 @@
 
         //se mira si son tecnicos
         if(strcmp(tipo, "tecnico_1")==0||strcmp(tipo, "tecnico_2")==0) {
-            while(true) {
+            while(1) {
 
             n=0;
             encontrado=0;
@@ -164,13 +164,13 @@
                 for(int i=n+1; i<20; i++) {
                     if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
                         //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
-                        if(clientes[i].prioridad > *clienteElegido->prioridad) {
+                        if(clientes[i].prioridad > clienteElegido->prioridad) {
                             clienteElegido = &clientes[i];
                         }
                     }
                 }
 
-                *clienteElegido->atendido = 1;
+                clienteElegido->atendido = 1;
                 pthread_mutex_unlock(&colaClientes);
 
                 int tipoAtencion = calculaAleatorios(0,100);
@@ -198,12 +198,12 @@
                 sleep(tiempoAtencion);
 
                 pthread_mutex_lock(&fichero);
-                writeLogMessage("Finaliza la atención:\n");
-                writeLogMessage(motivo);
+                writeLogMessage("Finaliza la atención: ");
+                writeLogMessage(motivo+"\n");
                 pthread_mutex_unlock(&fichero);
 
                 pthread_mutex_lock(&colaClientes);
-                *clienteElegido->atendido
+                clienteElegido->atendido = 0;
                 pthread_mutex_unlock(&colaClientes);
      
                 //se aumenta contador parcial de clientes y se comprueba si se descansa
@@ -223,7 +223,7 @@
 
         //son responsables de reparaciones
         } else {
-            while(true) {
+            while(1) {
 
                 n=0;
                 encontrado=0;
@@ -245,17 +245,19 @@
                     for(int i=n+1; i<20; i++) {
                         if(clientes[i].tipo == 1 && clientes[i].atendido==0) {
                             //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
-                            if(clientes[i].prioridad > *clienteElegido->prioridad) {
+                            if(clientes[i].prioridad > clienteElegido->prioridad) {
                                 clienteElegido = &clientes[i];
                             }
                         }
                     }
 
-                    *clienteElegido->atendido = 1;
+                    clienteElegido->atendido = 1;
                     pthread_mutex_unlock(&colaClientes);
 
+                    //calculo del tiempo de atencion
                     int tipoAtencion = calculaAleatorios(0,100);
                     int tiempoAtencion = 0;
+                    char motivo[50];
 
                     if(tipoAtencion <= 80) {
                         //80% bien identificados
@@ -268,22 +270,22 @@
                     } else {
                         //10% confusion de compañia, abandonan sistema
                         tiempoAtencion = calculaAleatorios(1,2)
-                        strcat(motivo, "Confusion de compañia. Abandona el sistema.");
+                        strcat(motivo, "Confusion de compania. Abandona el sistema.");
                     }
 
                     pthread_mutex_lock(&fichero);
-                    writeLogMessage("Comienza la atención:\n");
+                    writeLogMessage("Comienza la atencion: \n");
                     pthread_mutex_unlock(&fichero);
 
                     sleep(tiempoAtencion);
 
                     pthread_mutex_lock(&fichero);
-                    writeLogMessage("Finaliza la atención:\n");
-                    writeLogMessage("motivo final de atencion");
+                    writeLogMessage("Finaliza la atencion: ");
+                    writeLogMessage(motivo+"\n");
                     pthread_mutex_unlock(&fichero);
 
                     pthread_mutex_lock(&colaClientes);
-                    *clienteElegido->atendido
+                    clienteElegido->atendido = 0;
                     pthread_mutex_unlock(&colaClientes);
 
                     //se aumenta contador parcial de clientes y se comprueba si se descansa
