@@ -132,13 +132,13 @@
 
         //1.  Guardar en el log la hora de entrada.
         //2.  Guardar en el log el tipo de cliente.
-        char[3] tipo;
-        thread_mutex_lock(&fichero);
-
+        char[3] tipo;        
         switch(tipoCliente){
             case 0: tipo= "APP"
             case 1: tipo= "RED"
         }
+        
+        thread_mutex_lock(&fichero);
         writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " entra");
         pthread_mutex_unlock(&fichero);
 
