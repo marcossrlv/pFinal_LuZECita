@@ -105,14 +105,14 @@
                     clientes[i].tipo=0;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
-                    identificador="cliapp_";
+                    strcat(identificador,"cliapp_");
                 } else{
                     clientes[i].id=++nClientesRed;
                     clientes[i].atendido=0;
                     clientes[i].tipo=1;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
-                    identificador="clired_"
+                    strcat(identificador,"clired_");
                 }
     
                 sprintf(nIdentificador,"%d",clientes[i].id);
@@ -129,64 +129,7 @@
     }
 
     void * accionesCliente(void *arg){
-            pthread_mutex_lock(&colaClientes);
-            pthread_t nuevoCliente; 
-            for(int i=0; i<20; i++){
-                if(clientes[i].id==0){
-                    nClientesActualNoAtendidos++;
-                    nClientes++;
-                    listaClientes[i].id=nClientes;
-                    listaClientes[i].atendido=0; //No esta siendo atendido
-                    char string[20];
-                    sprintf(string,"%d",listaClientes[i].id);
-                    switch (calculaAleatorios(1,10)){
-                    case 1:
-                    case 2:
-                    case 3:
-                    case 4:
-                    case 5:
-                    case 6:
-                    case 7:
-                    case 8:
-                    case 9:
-                        if(sig==10){
-                            listaClientes[i].tipo=0; //Cliente normal a recepcion
-                        } else{
-                            listaClientes[i].tipo=2; //Cliente vip a recepcion
-                        }
-                        break;
-                    case 10:
-                        if(sig==10){
-                                listaClientes[i].tipo=1; //Cliente normal a máquina
-                            } else{
-                                listaClientes[i].tipo=3; //Cliente vip a máquina
-                            }
-                            break;
-                    }
-                    listaClientes[i].ascensor=0; //No esta en el ascensor
-                    pthread_mutex_lock(&fichero);
-                    writeLogMessage(string, "Llega a recepción");
-                    switch(listaClientes[i].tipo){
-                    case 0:
-                        writeLogMessage(string, "Cliente normal a recepción");
-                        break;
-                    case 1:
-                        writeLogMessage(string, "Cliente normal a máquina");
-                        break;
-                    case 2:
-                        writeLogMessage(string, "Cliente VIP a recepción");
-                        break;
-                    case 3:
-                        writeLogMessage(string, "Cliente VIP a máquina");
-                        break;
-                    }
-                    pthread_mutex_unlock(&fichero);
-                    int posNuevoCliente=i;
-                    pthread_create(&nuevoCliente, NULL, accionesCliente, (void *)&posNuevoCliente); //Se crea el hilo del cliente
-                    i=20;
-                }
-            }
-            pthread_mutex_unlock(&colaClientes);
+
     }
 
     void AccionesTécnico(){
