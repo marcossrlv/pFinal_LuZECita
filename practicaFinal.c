@@ -132,13 +132,17 @@
 
     }
 
-    void AccionesTécnico(){
+    void AccionesTecnico(void* arg){
 
+        char tipo[] = *arg; //posible segmentation fault
         struct cliente* clienteElegido;
         int n;
         int encontrado;
+        int clientesDescanso = 0;
 
-        while(true) {
+        //se mira si son tecnicos
+        if(strcmp(tipo, "tecnico_1")==0||strcmp(tipo, "tecnico_2")==0) {
+            while(true) {
 
             n=0;
             encontrado=0;
@@ -146,8 +150,8 @@
             pthread_mutex_lock(&colaClientes);
 
             //se busca un cliente de tipo app sin atender por el que empezar a comparar
-            for(int i=0; i<20 && encontrado=0; i++){
-                if(clientes[i].tipo==app && clientes[i].atendido==0){
+            for(int i=0; i<20 && encontrado==0; i++){
+                if(clientes[i].tipo==0 && clientes[i].atendido==0){
                     clienteElegido = &clientes[i];
                     encontrado = 1;
                     n = i;
@@ -158,7 +162,7 @@
             if(encontrado==1){
                 //se empieza a comparar desde la posicion del primero que se encontró
                 for(int i=n+1; i<20; i++) {
-                    if(clientes[i].tipo == app && clientes[i].atendido==0) {
+                    if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
                         //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
                         if(clientes[i].prioridad > *clienteElegido->prioridad) {
                             clienteElegido = &clientes[i];
@@ -171,16 +175,20 @@
 
                 int tipoAtencion = calculaAleatorios(0,100);
                 int tiempoAtencion = 0;
+                char motivo[50];
 
                 if(tipoAtencion <= 80) {
                     //80% bien identificados
                     tiempoAtencion = calculaAleatorios(1,4);
+                    strcat(motivo, "Bien identificado.");
                 } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
                     //10% mal identificados
                     tiempoAtencion = calculaAleatorios(2,6);
+                    strcat(motivo, "Mal identificado.");
                 } else {
                     //10% confusion de compañia, abandonan sistema
                     tiempoAtencion = calculaAleatorios(1,2)
+                    strcat(motivo, "Confusion de compañia. Abandona el sistema.");
                 }
 
                 pthread_mutex_lock(&fichero);
@@ -191,12 +199,19 @@
 
                 pthread_mutex_lock(&fichero);
                 writeLogMessage("Finaliza la atención:\n");
-                writeLogMessage("motivo final de atencion");
+                writeLogMessage(motivo);
                 pthread_mutex_unlock(&fichero);
 
                 pthread_mutex_lock(&colaClientes);
                 *clienteElegido->atendido
                 pthread_mutex_unlock(&colaClientes);
+     
+                //se aumenta contador parcial de clientes y se comprueba si se descansa
+                clientesDescanso++;
+                if(clientesDescanso==5) {
+                    sleep(5);
+                    clientesDescanso = 0;
+                }
 
 
             } else {
@@ -206,6 +221,86 @@
             
         }
 
+        //son responsables de reparaciones
+        } else {
+            while(true) {
+
+                n=0;
+                encontrado=0;
+
+                pthread_mutex_lock(&colaClientes);
+
+                //se busca un cliente de tipo red sin atender por el que empezar a comparar
+                for(int i=0; i<20 && encontrado==0; i++){
+                    if(clientes[i].tipo==1 && clientes[i].atendido==0){
+                        clienteElegido = &clientes[i];
+                        encontrado = 1;
+                        n = i;
+                    }
+                }
+
+                //si hay algun cliente de tipo red y no atendido se empieza la comparación con el resto
+                if(encontrado==1){
+                    //se empieza a comparar desde la posicion del primero que se encontró
+                    for(int i=n+1; i<20; i++) {
+                        if(clientes[i].tipo == 1 && clientes[i].atendido==0) {
+                            //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
+                            if(clientes[i].prioridad > *clienteElegido->prioridad) {
+                                clienteElegido = &clientes[i];
+                            }
+                        }
+                    }
+
+                    *clienteElegido->atendido = 1;
+                    pthread_mutex_unlock(&colaClientes);
+
+                    int tipoAtencion = calculaAleatorios(0,100);
+                    int tiempoAtencion = 0;
+
+                    if(tipoAtencion <= 80) {
+                        //80% bien identificados
+                        tiempoAtencion = calculaAleatorios(1,4);
+                        strcat(motivo, "Bien identificado.");
+                    } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
+                        //10% mal identificados
+                        tiempoAtencion = calculaAleatorios(2,6);
+                        strcat(motivo, "Mal identificado.");
+                    } else {
+                        //10% confusion de compañia, abandonan sistema
+                        tiempoAtencion = calculaAleatorios(1,2)
+                        strcat(motivo, "Confusion de compañia. Abandona el sistema.");
+                    }
+
+                    pthread_mutex_lock(&fichero);
+                    writeLogMessage("Comienza la atención:\n");
+                    pthread_mutex_unlock(&fichero);
+
+                    sleep(tiempoAtencion);
+
+                    pthread_mutex_lock(&fichero);
+                    writeLogMessage("Finaliza la atención:\n");
+                    writeLogMessage("motivo final de atencion");
+                    pthread_mutex_unlock(&fichero);
+
+                    pthread_mutex_lock(&colaClientes);
+                    *clienteElegido->atendido
+                    pthread_mutex_unlock(&colaClientes);
+
+                    //se aumenta contador parcial de clientes y se comprueba si se descansa
+                    clientesDescanso++;
+                    if(clientesDescanso==6) {
+                        sleep(5);
+                        clientesDescanso = 0;
+                    }
+
+
+                } else {
+                    pthread_mutex_unlock(&colaClientes);
+                    sleep(1);
+                }
+                
+            }
+        }
     }
 
     void AccionesEncargado(){
