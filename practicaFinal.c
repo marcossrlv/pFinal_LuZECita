@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
     #include <pthread.h> 
     #include <signal.h>
     #include <stdio.h>
@@ -7,14 +8,13 @@
 
     pthread_mutex_t fichero, colaClientes, solicitudes;
     pthread_cond_t suficientesSolicitudesDomiciliarias;
-    int nClientesApp, nClientesRed,nSolsDomiciliarias, nClientesNoAtendidos;
+    int nClientesApp, nClientesRed,nSolsDomiciliarias;
     struct cliente {
         int id, atendido, tipo, prioridad, solicitud;
     } clientes[20];
     pthread_t tecnico_1, tecnico_2, resprep_1, resprep_2, encargado, atencionDomiciliaria;
     FILE * logFile;
-    struct sigaction clienteApp, clienteRed, terminar; //DECLARACIÓN GLOBAL???
-
+    
 
     int calculaAleatorios(int min, int max);
     void writeLogMessage(char *id, char *msg);
@@ -27,7 +27,7 @@
     
 
     int main(int argc, char *argv[]){	
-
+        struct sigaction clienteApp, clienteRed, terminar; 
     //1. signal o sigaction SIGUSR1, cliente app.
         clienteApp.sa_flags=0;
         sigemptyset(&clienteApp.sa_mask);
@@ -49,6 +49,8 @@
     //3. signal o sigaction SIGINT, terminar.        
         terminar.sa_flags=0;
         sigemptyset(&terminar.sa_mask);
+        sidaddset(&terminar.sa_mask,SIGUSR1);
+        sidaddset(&terminar.sa_mask,SIGUSR2);
         terminar.sa_handler=terminarPrograma;
         if (sigaction(SIGINT, &terminar, NULL)==-1) {
             perror("Llamada a sigaction terminar.");
@@ -64,7 +66,7 @@
         if (pthread_cond_init(&suficientesSolicitudesDomiciliarias, NULL)!=0) exit(-1);
 
         //b.f. Contador de clientes de cada tipo y variables relativas a la solicitud de atención domiciliaria.
-        nClientesApp = 0, nClientesRed = 0, nSolsDomiciliarias = 0, nClientesNoAtendidos=0;
+        nClientesApp = 0, nClientesRed = 0, nSolsDomiciliarias = 0;
 
         //c. Lista de clientes id 0, Prioridad 0, atendido 0, solicitud 0.
         for(int i=0; i<20; i++){
@@ -72,7 +74,7 @@
             clientes[i].prioridad= 0;
             clientes[i].atendido= 0;
             clientes[i].solicitud= 0;
-            clientes[i].tipo=0;
+            clientes[i].tipo= 0;
         }
 
 
@@ -94,92 +96,81 @@
 
     void nuevoCliente(int sig) {
         pthread_mutex_lock(&colaClientes);
-        pthread_t nuevoCliente; 
-        for(int i=0; i<20; i++){
+        pthread_t nuevoCliente;
+        int aniadido=0, posNuevoCliente=0; 
+        
+        for(int i=0; i<20 && aniadido==0; i++){
             if(clientes[i].id==0){
-                nClientesNoAtendidos++;
-                char identificador[10];
-                char nIdentificador[3];
-                int posNuevoCliente=i;
+                aniadido=1;
+                posNuevoCliente=i;
+
                 if(sig==SIGUSR1){
                     clientes[i].id=++nClientesApp;
                     clientes[i].atendido=0;
                     clientes[i].tipo=0;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
-                    strcat(identificador,"cliapp_");
                 } else{
                     clientes[i].id=++nClientesRed;
                     clientes[i].atendido=0;
                     clientes[i].tipo=1;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
-                    strcat(identificador,"clired_");
                 }
-    
-                sprintf(nIdentificador,"%d",clientes[i].id);
-                strcat(identificador, nIdentificador);
-                pthread_mutex_lock(&fichero);
-                writeLogMessage(identificador, "Nuevo cliente accede al sistema");
-                pthread_mutex_unlock(&fichero);
                 
                 pthread_create(&nuevoCliente, NULL, accionesCliente, (void *)&posNuevoCliente);
-                i=20;
             }
         }
         pthread_mutex_unlock(&colaClientes);
     }
 
     void terminarPrograma(int sig) {
-        clienteApp.sa_handler=SIG_IGN;
-        clienteRed.sa_handler=SIG_IGN;
-        //SOLUCION PROVISIONAL PARA QUE NO PUEDAN LLEGAR NUEVOS CLIENTES
-        if (sigaction(SIGUSR1, &clienteApp, NULL)==-1) {
-            perror("Llamada a sigaction cliente app terminar.");
-            exit(-1);
-        }
+        int hayClientesEnElSistema=0;
+        do{
+            hayClientesEnElSistema=0;
+            pthread_mutex_lock(&colaClientes);
+            for(int i=0; i<20 && hayClientesEnElSistema==0; i++){
+                if(clientes[i].id!=0) hayClientesEnElSistema=1;
+            }
+            pthread_mutex_unlock(&colaClientes);
+            sleep(2);
+        } while(hayClientesEnElSistema==1);
+        
 
-        if (sigaction(SIGUSR2, &clienteRed, NULL)==-1) {
-            perror("Llamada a sigaction cliente red terminar.");
-            exit(-1);
-        }
-
-        pthread_mutex_lock(&colaClientes);
-        while(nClientesNoAtendidos!=0){ //Hasta que todos los clientes no esten atentidos(por máquina o por recepcionista)
-            pthread_mutex_unlock(&colaClientes);//el programa no se puede cerrar
-            sleep(3);
-        }
         pthread_mutex_lock(&fichero);
         writeLogMessage("ESTADO", "No quedan clientes por atender, se cierra el programa");
         pthread_mutex_unlock(&fichero);
+
         if(pthread_mutex_destroy(&fichero)!=0) exit(-1);
         if(pthread_mutex_destroy(&colaClientes)!=0) exit(-1);
         if(pthread_mutex_destroy(&solicitudes)!=0) exit(-1);
         if(pthread_cond_destroy(&suficientesSolicitudesDomiciliarias)!=0) exit(-1);
+
         exit(0);
     }
 
     void * accionesCliente(void *arg){
         //1.  Guardar en el log la hora de entrada.
         //2.  Guardar en el log el tipo de cliente.
-        char[3] tipo;        
-        switch(tipoCliente){
-            case 0: tipo= "APP"
-            case 1: tipo= "RED"
-        }
-        
-        thread_mutex_lock(&fichero);
-        writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " entra");
+        char identificador[10]="";
+        char nIdentificador[3]="";
+        int pos = *(int*)arg;
+        int tiempoEspera=0;
+       
+        if(clientes[pos].tipo == 1) strcpy(identificador,"clired_");
+        else  strcpy(identificador,"cliapp_");
+
+        sprintf(nIdentificador,"%d",clientes[pos].id);
+        strcat(identificador, nIdentificador);
+        pthread_mutex_lock(&fichero);
+        writeLogMessage(identificador, "Nuevo cliente accede al sistema");
         pthread_mutex_unlock(&fichero);
 
-        while(true){
+        while(1){
             //  3. Comprueba si está siendo atendido.
-            if(clientes[arg].atendido == 0){
-
-                pthread_mutex_lock(&colaClientes);
-                clientes[arg].atendido= 1;
+            pthread_mutex_lock(&colaClientes);
+            if(clientes[pos].atendido == 0){
                 pthread_mutex_unlock(&colaClientes);
-
                 //a.  Si no lo está, calculamos el comportamiento del cliente (si se va por
                 //    dificultad o si se cansa de esperar algo que solo ocurre cada 8
                 //    segundos) y también el caso de que pierda la conexión a internet.
@@ -188,29 +179,34 @@
                     //  han transcurrido 8 segundos. 
                     case 10:
                     case 9: 
-                        sleep(8);
+                        if(tiempoEspera%8==0){
+                            thread_mutex_lock(&fichero);
+                            writeLogMessage(identificador,"Se cansa de esperar y se marcha");
+                            pthread_mutex_unlock(&fichero);
 
-                        thread_mutex_lock(&fichero);
-                        writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " se cansa de esperar y se marcha");
-                        pthread_mutex_unlock(&fichero);
-
-                        pthread_mutex_lock(&colaClientes);
-                        clientes[arg].id=0;
-                        clientes[arg].tipo=-1;
-                        pthread_mutex_unlock(&colaClientes);
-
-                        pthread_exit(NULL);
+                            pthread_mutex_lock(&colaClientes);
+                            clientes[pos].id=0;
+                            clientes[pos].tipo=0;
+                            clientes[pos].prioridad=0;
+                            clientes[pos].solicitud=0;
+                            clientes[pos].atendido=0;
+                            pthread_mutex_unlock(&colaClientes);
+                            
+                            pthread_exit(NULL);
+                        }
                         break;
                     //  Un 10 % de los clientes encuentra difícil la aplicación y se va de inmediato.
                     case 8:
-
                         thread_mutex_lock(&fichero);
-                        writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " encuentra muy dificil la aplicacion y se marcha");
+                        writeLogMessage(identificador, "Encuentra dificil la aplicación y se marcha");
                         pthread_mutex_unlock(&fichero);
 
                         pthread_mutex_lock(&colaClientes);
-                        clientes[arg].id=0;
-                        clientes[arg].tipo=-1;
+                        clientes[pos].id=0;
+                        clientes[pos].tipo=0;
+                        clientes[pos].prioridad=0;
+                        clientes[pos].solicitud=0;
+                        clientes[pos].atendido=0;
                         pthread_mutex_unlock(&colaClientes);
                         
                         pthread_exit(NULL);
@@ -223,84 +219,94 @@
                     case 2:
                     //  Del 70 % restante un 5 % pierde la conexión
                     //  a internet y tambi´en abandona.
-                    case 1: if(calculaAleatorios(1,20) == 20){
+                    case 1: 
+                        if(calculaAleatorios(1,20) == 20){
                         
                         thread_mutex_lock(&fichero);
-                        writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " ha perdido la conex y abandona");
+                        writeLogMessage(identificador, "Pierde la conexion y abandona");
                         pthread_mutex_unlock(&fichero);
 
                         pthread_mutex_lock(&colaClientes);
-                        clientes[arg].id=0;
-                        clientes[arg].tipo=-1;
+                        clientes[pos].id=0;
+                        clientes[pos].tipo=0;
+                        clientes[pos].prioridad=0;
+                        clientes[pos].solicitud=0;
+                        clientes[pos].atendido=0;
                         pthread_mutex_unlock(&colaClientes);
                         
                         pthread_exit(NULL);
-                    }
+                        
+                        }
+                        break;
                 }
                 //  c. Sino debe dormir 2 segundos y vuelve a 3.
 
-                pthread_mutex_lock(&colaClientes);
-                clientes[arg].atendido= 0;
-                pthread_mutex_unlock(&colaClientes);
-
                 sleep(2);
+                tiempoEspera+=2;
 
             //4.  Si está siendo atendido por el técnico correspondiente debemos esperar a que
             //    termine (puede comprobar cada 2 segundos).
             } else {
-                while(clientes[arg].atendido == 1) { 
+                while(clientes[pos].atendido == 1) { 
+                    pthread_mutex_unlock(&colaClientes);
                     sleep(2);
+                    pthread_mutex_lock(&colaClientes);
                 }
-
-                pthread_mutex_lock(&colaClientes);
-                clientes[arg].atendido= 1;
                 pthread_mutex_unlock(&colaClientes);
 
                 //5.  Si el cliente es de tipo red y quiere realizar una solicitud domiciliaria
-                if(tipo == "RED"){
-                    while(true){
-                        //a.  Comprueba el número de solicitudes pendientes
-                        //b.  Si es menor de 4 incrementa el valor
-                        if(nSolsDomiciliarias < 4){ 
-                            thread_mutex_lock(&solicitudes); 
-                            nSolsDomiciliarias++; 
+                if(clientes[pos].tipo == 1 ){
+                    switch (calculaAleatorios(1,10))
+                    {
+                    case 1:
+                    case 2:
+                    case 3:
+                    case 4:
+                    case 5:
+                    case 6:
+                    case 7:
+                        break;
+                    case 8:
+                    case 9:
+                    case 10:
+                        pthread_mutex_lock(&solicitudes);
+                        while(nSolsDomiciliarias>=4){
                             pthread_mutex_unlock(&solicitudes);
-                        
-                            //i. Escribe en el log que espera para ser atendido
-                            thread_mutex_lock(&fichero);
-                            writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " espera para ser atendido por un técnico");
-                            pthread_mutex_unlock(&fichero);
-
-                            //ii. Cambia el valor de solicitud a 1
-                            clientes[arg].solicitud= 1;
-
-                            //iii. Si es el cuarto avisa al técnico con condition_signal
-                            //COMPROBAR
-                            if(nSolsDomiciliarias == 4){ pthread_cond_signal(&suficientesSolicitudesDomiciliarias); }
-
-                            //iv. Se bloquea (condition_wait) hasta que la solicitud pase a ser 0 y
-                            //por tanto ya se haya finalizado la atención
-                            pthread_cond_wait(&suficientesSolicitudesDomiciliarias, &solicitudes);
-
-                            //v. Comunica que su atención se ha finalizado
-                            thread_mutex_lock(&fichero);
-                            writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " ha terminado de ser atendido por un técnico");
-                            pthread_mutex_unlock(&fichero);
-
-                            break;
+                            sleep(3);
+                            pthread_mutex_lock(&solicitudes);
                         }
+
+                        pthread_mutex_lock(&fichero);
+                        writeLogMessage(identificador, "Espera atencion domiciliaria");
+                        pthread_mutex_unlock(&fichero);
+                        
+                        pthread_mutex_lock(&colaClientes);
+                        clientes[pos].solicitud=1;
+                        pthread_mutex_unlock(&colaClientes);
+                        
+                        if(++nSolsDomiciliarias==4) pthread_cond_signal(&suficientesSolicitudesDomiciliarias);
+                        pthread_cond_wait(&suficientesSolicitudesDomiciliarias,&solicitudes);
+
+                        pthread_mutex_lock(&fichero);
+                        writeLogMessage(identificador, "Finaliza su atencion domiciliaria");
+                        pthread_mutex_unlock(&fichero);
+
+                        break;
                     }
                 }
 
-                //6.  Sino libera su posición en cola de clientes y se va.
+                //6.  Si no libera su posición en cola de clientes y se va.
                 pthread_mutex_lock(&colaClientes);
-                clientes[arg].id=0;
-                clientes[arg].tipo=-1;
+                clientes[pos].id=0;
+                clientes[pos].tipo=0;
+                clientes[pos].prioridad=0;
+                clientes[pos].solicitud=0;
+                clientes[pos].atendido=0;
                 pthread_mutex_unlock(&colaClientes);
 
                 //7.  Escribe en el log
                 thread_mutex_lock(&fichero);
-                writeLogMessage(clientes[arg], "Cliente de tipo " + tipo + " ha FINALIZADO");
+                writeLogMessage(identificador, "Se va despues de ser atendido");
                 pthread_mutex_unlock(&fichero);
 
                 //8.  Fin del hilo Cliente
@@ -311,14 +317,14 @@
 
     void * accionesTecnico(void* arg){
 
-        char tipo[] = (char*) arg; //posible segmentation fault
+        char id[] = (char*) arg; //posible segmentation fault
         struct cliente* clienteElegido;
         int n;
         int encontrado;
         int clientesDescanso = 0;
 
         //se mira si son tecnicos
-        if(strcmp(tipo, "tecnico_1")==0||strcmp(tipo, "tecnico_2")==0) {
+        if(strcmp(id, "tecnico_1")==0||strcmp(id, "tecnico_2")==0) {
             while(1) {
 
             n=0;
@@ -357,26 +363,25 @@
                 if(tipoAtencion <= 80) {
                     //80% bien identificados
                     tiempoAtencion = calculaAleatorios(1,4);
-                    strcat(motivo, "Bien identificado.");
+                    strcpy(motivo, "Bien identificado.");
                 } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
                     //10% mal identificados
                     tiempoAtencion = calculaAleatorios(2,6);
-                    strcat(motivo, "Mal identificado.");
+                    strcpy(motivo, "Mal identificado.");
                 } else {
                     //10% confusion de compañia, abandonan sistema
-                    tiempoAtencion = calculaAleatorios(1,2)
-                    strcat(motivo, "Confusion de compañia. Abandona el sistema.");
+                    tiempoAtencion = calculaAleatorios(1,2);
+                    strcpy(motivo, "Confusion de compañia. Abandona el sistema.");
                 }
 
                 pthread_mutex_lock(&fichero);
-                writeLogMessage("Comienza la atención:\n");
+                writeLogMessage(id,"Comienza la atención:\n");
                 pthread_mutex_unlock(&fichero);
 
                 sleep(tiempoAtencion);
 
                 pthread_mutex_lock(&fichero);
-                writeLogMessage("Finaliza la atención: ");
-                writeLogMessage(motivo+"\n");
+                writeLogMessage(id,"Finaliza la atención: "+motivo);
                 pthread_mutex_unlock(&fichero);
 
                 pthread_mutex_lock(&colaClientes);
@@ -439,15 +444,15 @@
                     if(tipoAtencion <= 80) {
                         //80% bien identificados
                         tiempoAtencion = calculaAleatorios(1,4);
-                        strcat(motivo, "Bien identificado.");
+                        strcpy(motivo, "Bien identificado.");
                     } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
                         //10% mal identificados
                         tiempoAtencion = calculaAleatorios(2,6);
-                        strcat(motivo, "Mal identificado.");
+                        strcpy(motivo, "Mal identificado.");
                     } else {
                         //10% confusion de compañia, abandonan sistema
-                        tiempoAtencion = calculaAleatorios(1,2)
-                        strcat(motivo, "Confusion de compania. Abandona el sistema.");
+                        tiempoAtencion = calculaAleatorios(1,2);
+                        strcpy(motivo, "Confusion de compania. Abandona el sistema.");
                     }
 
                     pthread_mutex_lock(&fichero);
