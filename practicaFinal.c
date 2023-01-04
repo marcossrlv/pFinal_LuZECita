@@ -5,6 +5,7 @@
     #include <time.h>
     #include <unistd.h>
     #include <stdlib.h>
+    #include <string.h>
 
     pthread_mutex_t fichero, colaClientes, solicitudes;
     pthread_cond_t suficientesSolicitudesDomiciliarias;
@@ -49,8 +50,8 @@
     //3. signal o sigaction SIGINT, terminar.        
         terminar.sa_flags=0;
         sigemptyset(&terminar.sa_mask);
-        sidaddset(&terminar.sa_mask,SIGUSR1);
-        sidaddset(&terminar.sa_mask,SIGUSR2);
+        sigaddset(&terminar.sa_mask,SIGUSR1);
+        sigaddset(&terminar.sa_mask,SIGUSR2);
         terminar.sa_handler=terminarPrograma;
         if (sigaction(SIGINT, &terminar, NULL)==-1) {
             perror("Llamada a sigaction terminar.");
@@ -180,7 +181,7 @@
                     case 10:
                     case 9: 
                         if(tiempoEspera%8==0){
-                            thread_mutex_lock(&fichero);
+                            pthread_mutex_lock(&fichero);
                             writeLogMessage(identificador,"Se cansa de esperar y se marcha");
                             pthread_mutex_unlock(&fichero);
 
@@ -197,7 +198,7 @@
                         break;
                     //  Un 10 % de los clientes encuentra difícil la aplicación y se va de inmediato.
                     case 8:
-                        thread_mutex_lock(&fichero);
+                        pthread_mutex_lock(&fichero);
                         writeLogMessage(identificador, "Encuentra dificil la aplicación y se marcha");
                         pthread_mutex_unlock(&fichero);
 
@@ -222,7 +223,7 @@
                     case 1: 
                         if(calculaAleatorios(1,20) == 20){
                         
-                        thread_mutex_lock(&fichero);
+                        pthread_mutex_lock(&fichero);
                         writeLogMessage(identificador, "Pierde la conexion y abandona");
                         pthread_mutex_unlock(&fichero);
 
@@ -305,7 +306,7 @@
                 pthread_mutex_unlock(&colaClientes);
 
                 //7.  Escribe en el log
-                thread_mutex_lock(&fichero);
+                pthread_mutex_lock(&fichero);
                 writeLogMessage(identificador, "Se va despues de ser atendido");
                 pthread_mutex_unlock(&fichero);
 
@@ -317,7 +318,7 @@
 
     void * accionesTecnico(void* arg){
 
-        char identificadorTecnico[] = (char*) arg; //posible segmentation fault
+        char *identificadorTecnico = (char*) arg; //posible segmentation fault
         struct cliente* clienteElegido;
         int n;
         int encontrado;
@@ -493,7 +494,7 @@
     }
 
     void * accionesEncargado(void * arg){
-        char identificadorTecnico[] = (char*) arg;
+        char *identificadorTecnico = (char*) arg;
         struct cliente* clienteElegido=NULL;
         
 
