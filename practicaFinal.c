@@ -317,14 +317,14 @@
 
     void * accionesTecnico(void* arg){
 
-        char id[] = (char*) arg; //posible segmentation fault
+        char identificadorTecnico[] = (char*) arg; //posible segmentation fault
         struct cliente* clienteElegido;
         int n;
         int encontrado;
         int clientesDescanso = 0;
 
         //se mira si son tecnicos
-        if(strcmp(id, "tecnico_1")==0||strcmp(id, "tecnico_2")==0) {
+        if(strcmp(identificadorTecnico, "tecnico_1")==0||strcmp(identificadorTecnico, "tecnico_2")==0) {
             while(1) {
 
             n=0;
@@ -347,7 +347,7 @@
                 for(int i=n+1; i<20; i++) {
                     if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
                         //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
-                        if(clientes[i].prioridad > clienteElegido->prioridad) {
+                        if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
                             clienteElegido = &clientes[i];
                         }
                     }
@@ -356,32 +356,35 @@
                 clienteElegido->atendido = 1;
                 pthread_mutex_unlock(&colaClientes);
 
-                int tipoAtencion = calculaAleatorios(0,100);
+                int tipoAtencion = calculaAleatorios(1,100);
                 int tiempoAtencion = 0;
-                char motivo[50];
+                char motivo[50]="";
+                char auxMotivo[50]="";
 
                 if(tipoAtencion <= 80) {
                     //80% bien identificados
                     tiempoAtencion = calculaAleatorios(1,4);
-                    strcpy(motivo, "Bien identificado.");
+                    strcpy(auxMotivo, "Bien identificado.");
                 } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
                     //10% mal identificados
                     tiempoAtencion = calculaAleatorios(2,6);
-                    strcpy(motivo, "Mal identificado.");
+                    strcpy(auxMotivo, "Mal identificado.");
                 } else {
                     //10% confusion de compañia, abandonan sistema
                     tiempoAtencion = calculaAleatorios(1,2);
-                    strcpy(motivo, "Confusion de compañia. Abandona el sistema.");
+                    strcpy(auxMotivo, "Confusion de compañia. Abandona el sistema.");
                 }
 
                 pthread_mutex_lock(&fichero);
-                writeLogMessage(id,"Comienza la atención:\n");
+                writeLogMessage(identificadorTecnico,"Comienza la atención:\n");
                 pthread_mutex_unlock(&fichero);
 
                 sleep(tiempoAtencion);
 
+                strcpy(motivo,"Finaliza la atencion ");
+                strcat(motivo,auxMotivo);
                 pthread_mutex_lock(&fichero);
-                writeLogMessage(id,"Finaliza la atención: "+motivo);
+                writeLogMessage(identificadorTecnico,motivo);
                 pthread_mutex_unlock(&fichero);
 
                 pthread_mutex_lock(&colaClientes);
@@ -427,7 +430,7 @@
                     for(int i=n+1; i<20; i++) {
                         if(clientes[i].tipo == 1 && clientes[i].atendido==0) {
                             //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
-                            if(clientes[i].prioridad > clienteElegido->prioridad) {
+                            if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
                                 clienteElegido = &clientes[i];
                             }
                         }
@@ -437,33 +440,35 @@
                     pthread_mutex_unlock(&colaClientes);
 
                     //calculo del tiempo de atencion
-                    int tipoAtencion = calculaAleatorios(0,100);
+                    int tipoAtencion = calculaAleatorios(1,100);
                     int tiempoAtencion = 0;
-                    char motivo[50];
+                    char motivo[50]="";
+                    char auxMotivo[50]="";
 
                     if(tipoAtencion <= 80) {
                         //80% bien identificados
                         tiempoAtencion = calculaAleatorios(1,4);
-                        strcpy(motivo, "Bien identificado.");
+                        strcpy(auxMotivo, "Bien identificado.");
                     } else if (tipoAtencion > 80 && tipoAtencion <= 90) {
                         //10% mal identificados
                         tiempoAtencion = calculaAleatorios(2,6);
-                        strcpy(motivo, "Mal identificado.");
+                        strcpy(auxMotivo, "Mal identificado.");
                     } else {
                         //10% confusion de compañia, abandonan sistema
                         tiempoAtencion = calculaAleatorios(1,2);
-                        strcpy(motivo, "Confusion de compania. Abandona el sistema.");
+                        strcpy(auxMotivo, "Confusion de compania. Abandona el sistema.");
                     }
 
                     pthread_mutex_lock(&fichero);
-                    writeLogMessage("Comienza la atencion: \n");
+                    writeLogMessage(identificadorTecnico,"Comienza la atencion: \n");
                     pthread_mutex_unlock(&fichero);
 
                     sleep(tiempoAtencion);
-
+                
+                    strcpy(motivo,"Finaliza la atencion ");
+                    strcat(motivo,auxMotivo);
                     pthread_mutex_lock(&fichero);
-                    writeLogMessage("Finaliza la atencion: ");
-                    writeLogMessage(motivo+"\n");
+                    writeLogMessage(identificadorTecnico,motivo);
                     pthread_mutex_unlock(&fichero);
 
                     pthread_mutex_lock(&colaClientes);
@@ -488,10 +493,11 @@
     }
 
     void * accionesEncargado(void * arg){
-        
+        char identificadorTecnico[] = (char*) arg;
         struct cliente* clienteElegido=NULL;
+        
 
-        while(true){
+        while(1){
 
             pthread_mutex_lock(&colaClientes);
 
@@ -504,10 +510,10 @@
                     //Si ya se selecciono un cliente
                     if(clienteElegido != NULL){
                         //Si el nuevo cliente tiene mayor prioridad
-                        if(clienteElegido.prioridad < clientes[z].prioridad){
+                        if(clienteElegido->prioridad < clientes[z].prioridad){
                             clienteElegido= &clientes[z];   
                         //Si el cliente a comprobar tiene la misma prioridad pero espera más, se selecciona:
-                        } else if(clienteElegido.prioridad == clientes[z].prioridad && clienteElegido.id > clientes[z].id){ 
+                        } else if(clienteElegido->prioridad == clientes[z].prioridad && clienteElegido->id > clientes[z].id){ 
                             clienteElegido= &clientes[z];
                         }
                     //Si no se encontro un cliente aun
@@ -521,9 +527,9 @@
                  for(int z= 0; z<20; z++){
                     if(clientes[z].tipo==0 && clientes[z].atendido==0){
                         if(clienteElegido != NULL){
-                            if(clienteElegido.prioridad < clientes[z].prioridad){
+                            if(clienteElegido->prioridad < clientes[z].prioridad){
                                 clienteElegido= &clientes[z]; 
-                            } else if(clienteElegido.prioridad == clientes[z].prioridad && clienteElegido.id > clientes[z].id){ 
+                            } else if(clienteElegido->prioridad == clientes[z].prioridad && clienteElegido->id > clientes[z].id){ 
                                 clienteElegido= &clientes[z];
                             }
                         } else { clienteElegido= &clientes[z]; }
@@ -538,12 +544,13 @@
                 
             //2.  si lo he encontrado, cambiamos el flag de atendido
             } else {
-                *clienteElegido->atendido= 1;
+                clienteElegido->atendido= 1;
                 pthread_mutex_unlock(&colaClientes);
 
                 //3.  Calculamos el tipo de atención y en función de esto el tiempo de atención (el 80%, 10%, 10%).
                 int tiempoAtencion= 0;
-                char motivo[50];
+                char motivo[50]="";
+                char auxMotivo[50]="";
 
                 switch(calculaAleatorios(1,10)){
                     case 10:
@@ -554,32 +561,42 @@
                     case 5:
                     case 4:
                     // 80% bien identificados
-                    case 3: tiempoAtencion= calculaAleatorios(1,4); strcat(motivo, "Bien identificado."); break;
+                    case 3: 
+                        tiempoAtencion= calculaAleatorios(1,4); 
+                        strcpy(auxMotivo, "Bien identificado."); 
+                        break;
                     // 10% mal identificados
-                    case 2: tiempoAtencion= calculaAleatorios(2,6); strcat(motivo, "Mal identificado."); break;
+                    case 2: 
+                        tiempoAtencion= calculaAleatorios(2,6); 
+                        strcpy(auxMotivo, "Mal identificado."); 
+                        break;
                         //10% confusion de compañia, abandonan sistema
-                    case 1; tiempoAtencion= calculaAleatorios(1,2); strcat(motivo, "Confusion de compañia. Abandona el sistema.");
+                    case 1: 
+                        tiempoAtencion= calculaAleatorios(1,2); 
+                        strcpy(auxMotivo, "Confusion de compañia. Abandona el sistema.");
+                        break;
                 }
+
 
                 //4.  Guardamos en el log que comienza la atención
                 pthread_mutex_lock(&fichero);
-                writeLogMessage("Comienza la atención:\n");
+                writeLogMessage(identificadorTecnico,"Comienza la atención:\n");
                 pthread_mutex_unlock(&fichero);
 
                 //5.  Dormimos el tiempo de atención.
                 sleep(tiempoAtencion);
 
                 //6.  Guardamos en el log que finaliza la atención
-                pthread_mutex_lock(&fichero);
-                writeLogMessage("Finaliza la atención:\n");
-
                 //7.  Guardamos en el log el motivo del fin de la atención.
-                writeLogMessage(motivo);
+                strcpy(motivo,"Finaliza la atencion ");
+                strcat(motivo,auxMotivo);
+                pthread_mutex_lock(&fichero);
+                writeLogMessage(identificadorTecnico,motivo);
                 pthread_mutex_unlock(&fichero);
 
                 //8.  Cambiamos el flag de atendido
-                    pthread_mutex_lock(&colaClientes);
-                *clienteElegido->atendido
+                pthread_mutex_lock(&colaClientes);
+                clienteElegido->atendido;
                 pthread_mutex_unlock(&colaClientes);
                 //9.  Volvemos al paso 1 y buscamos el siguiente.
             }
@@ -606,7 +623,7 @@
                 }
 
                 for(int i=n+1; i<20; i++) {
-                    if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
+                    if(clientes[i].solicitud==1) {
                         if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
                             clienteElegido = &clientes[i];
                         } 
