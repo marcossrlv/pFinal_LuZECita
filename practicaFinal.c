@@ -80,6 +80,8 @@
 
 
         //e. Fichero de Log
+        logFile = fopen("registroTiempos.log", "w");
+        fclose(logFile);
         
         //5. Crear 6 hilos (técnicos, responsables de reparaciones, encargado y
         //atención domiciliaria).
@@ -108,13 +110,13 @@
                 if(sig==SIGUSR1){
                     clientes[i].id=++nClientesApp;
                     clientes[i].atendido=0;
-                    clientes[i].tipo=0;
+                    clientes[i].tipo=1;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
                 } else{
                     clientes[i].id=++nClientesRed;
                     clientes[i].atendido=0;
-                    clientes[i].tipo=1;
+                    clientes[i].tipo=2;
                     clientes[i].solicitud=0;
                     clientes[i].prioridad=calculaAleatorios(1,10);
                 }
@@ -126,6 +128,10 @@
     }
 
     void terminarPrograma(int sig) {
+        pthread_mutex_lock(&fichero);
+        writeLogMessage("ESTADO", "Se espera a que no haya clientes en el sistema y se cierra el programa");
+        pthread_mutex_unlock(&fichero);
+
         int hayClientesEnElSistema=0;
         do{
             hayClientesEnElSistema=0;
@@ -153,12 +159,12 @@
     void * accionesCliente(void *arg){
         //1.  Guardar en el log la hora de entrada.
         //2.  Guardar en el log el tipo de cliente.
-        char identificador[10]="";
-        char nIdentificador[3]="";
+        char identificador[20]="";
+        char nIdentificador[20]="";
         int pos = *(int*)arg;
         int tiempoEspera=0;
        
-        if(clientes[pos].tipo == 1) strcpy(identificador,"clired_");
+        if(clientes[pos].tipo == 2) strcpy(identificador,"clired_");
         else  strcpy(identificador,"cliapp_");
 
         sprintf(nIdentificador,"%d",clientes[pos].id);
@@ -180,7 +186,7 @@
                     //  han transcurrido 8 segundos. 
                     case 10:
                     case 9: 
-                        if(tiempoEspera%8==0){
+                        if(tiempoEspera%8==0 && tiempoEspera>0){
                             pthread_mutex_lock(&fichero);
                             writeLogMessage(identificador,"Se cansa de esperar y se marcha");
                             pthread_mutex_unlock(&fichero);
@@ -222,20 +228,20 @@
                     //  a internet y tambi´en abandona.
                     case 1: 
                         if(calculaAleatorios(1,20) == 20){
-                        
-                        pthread_mutex_lock(&fichero);
-                        writeLogMessage(identificador, "Pierde la conexion y abandona");
-                        pthread_mutex_unlock(&fichero);
 
-                        pthread_mutex_lock(&colaClientes);
-                        clientes[pos].id=0;
-                        clientes[pos].tipo=0;
-                        clientes[pos].prioridad=0;
-                        clientes[pos].solicitud=0;
-                        clientes[pos].atendido=0;
-                        pthread_mutex_unlock(&colaClientes);
-                        
-                        pthread_exit(NULL);
+                            pthread_mutex_lock(&fichero);
+                            writeLogMessage(identificador, "Pierde la conexion y abandona");
+                            pthread_mutex_unlock(&fichero);
+
+                            pthread_mutex_lock(&colaClientes);
+                            clientes[pos].id=0;
+                            clientes[pos].tipo=0;
+                            clientes[pos].prioridad=0;
+                            clientes[pos].solicitud=0;
+                            clientes[pos].atendido=0;
+                            pthread_mutex_unlock(&colaClientes);
+                            
+                            pthread_exit(NULL);
                         
                         }
                         break;
@@ -256,7 +262,7 @@
                 pthread_mutex_unlock(&colaClientes);
 
                 //5.  Si el cliente es de tipo red y quiere realizar una solicitud domiciliaria
-                if(clientes[pos].tipo == 1 ){
+                if(clientes[pos].tipo == 2 ){
                     switch (calculaAleatorios(1,10))
                     {
                     case 1:
@@ -335,7 +341,7 @@
 
             //se busca un cliente de tipo app sin atender por el que empezar a comparar
             for(int i=0; i<20 && encontrado==0; i++){
-                if(clientes[i].tipo==0 && clientes[i].atendido==0){
+                if(clientes[i].tipo==1 && clientes[i].atendido==0){
                     clienteElegido = &clientes[i];
                     encontrado = 1;
                     n = i;
@@ -346,7 +352,7 @@
             if(encontrado==1){
                 //se empieza a comparar desde la posicion del primero que se encontró
                 for(int i=n+1; i<20; i++) {
-                    if(clientes[i].tipo == 0 && clientes[i].atendido==0) {
+                    if(clientes[i].tipo == 1 && clientes[i].atendido==0) {
                         //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
                         if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
                             clienteElegido = &clientes[i];
@@ -389,7 +395,7 @@
                 pthread_mutex_unlock(&fichero);
 
                 pthread_mutex_lock(&colaClientes);
-                clienteElegido->atendido = 0;
+                clienteElegido->atendido = 2;
                 pthread_mutex_unlock(&colaClientes);
      
                 //se aumenta contador parcial de clientes y se comprueba si se descansa
@@ -418,7 +424,7 @@
 
                 //se busca un cliente de tipo red sin atender por el que empezar a comparar
                 for(int i=0; i<20 && encontrado==0; i++){
-                    if(clientes[i].tipo==1 && clientes[i].atendido==0){
+                    if(clientes[i].tipo==2 && clientes[i].atendido==0){
                         clienteElegido = &clientes[i];
                         encontrado = 1;
                         n = i;
@@ -429,7 +435,7 @@
                 if(encontrado==1){
                     //se empieza a comparar desde la posicion del primero que se encontró
                     for(int i=n+1; i<20; i++) {
-                        if(clientes[i].tipo == 1 && clientes[i].atendido==0) {
+                        if(clientes[i].tipo == 2 && clientes[i].atendido==0) {
                             //se comparan prioridades, si son iguales se coge al primero de la lista que llevará más tiempo esperando??
                             if(clientes[i].prioridad > clienteElegido->prioridad || (clientes[i].prioridad == clienteElegido->prioridad && clientes[i].id < clienteElegido->id)) {
                                 clienteElegido = &clientes[i];
@@ -473,7 +479,7 @@
                     pthread_mutex_unlock(&fichero);
 
                     pthread_mutex_lock(&colaClientes);
-                    clienteElegido->atendido = 0;
+                    clienteElegido->atendido = 2;
                     pthread_mutex_unlock(&colaClientes);
 
                     //se aumenta contador parcial de clientes y se comprueba si se descansa
@@ -507,7 +513,7 @@
             //   al de mayor tiempo de espera...
             for(int z= 0; z<20; z++){
                 //Si se encuentra a un cliente disponible...
-                if(clientes[z].tipo==1 && clientes[z].atendido==0){
+                if(clientes[z].tipo==2 && clientes[z].atendido==0){
                     //Si ya se selecciono un cliente
                     if(clienteElegido != NULL){
                         //Si el nuevo cliente tiene mayor prioridad
@@ -526,7 +532,7 @@
             if(clienteElegido == NULL){
 
                  for(int z= 0; z<20; z++){
-                    if(clientes[z].tipo==0 && clientes[z].atendido==0){
+                    if(clientes[z].tipo==1 && clientes[z].atendido==0){
                         if(clienteElegido != NULL){
                             if(clienteElegido->prioridad < clientes[z].prioridad){
                                 clienteElegido= &clientes[z]; 
@@ -597,7 +603,7 @@
 
                 //8.  Cambiamos el flag de atendido
                 pthread_mutex_lock(&colaClientes);
-                clienteElegido->atendido;
+                clienteElegido->atendido=2;
                 pthread_mutex_unlock(&colaClientes);
                 //9.  Volvemos al paso 1 y buscamos el siguiente.
             }
@@ -632,8 +638,8 @@
                 }
                 pthread_mutex_unlock(&colaClientes);
 
-                char identificador[10]="clired_";
-                char nIdentificador[3];
+                char identificador[20]="clired_";
+                char nIdentificador[20]="";
                 sprintf(nIdentificador,"%d",clienteElegido->id);
                 strcat(identificador, nIdentificador);
                 
